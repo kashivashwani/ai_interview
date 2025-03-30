@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation';
 import React, { useEffect, useState } from 'react'
 import { vapi } from '@/lib/vapi.sdk';
+import { interviewer } from '@/constants';
 
 enum CallStatus {
     INACTIVE = 'INACTIVE',
@@ -18,7 +19,7 @@ interface SavedMessage {
     content: string;
 }
 
-const Agent = ({ userName, userId, type }: AgentProps) => {
+const Agent = ({ userName, userId, type, interviewId, questions }: AgentProps) => {
     const router = useRouter();
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [callStatus, setCallStatus] = useState<CallStatus>(CallStatus.INACTIVE);
@@ -26,8 +27,8 @@ const Agent = ({ userName, userId, type }: AgentProps) => {
     const [messages, setMessages] = useState<SavedMessage[]>([]); 
     
     useEffect(() => {
-        const onCallStart = () => setCallStatus(CallStatus.ACTIVE);
-        const onCallEnd = () => setCallStatus(CallStatus.FINISHED);
+        const onCallStart = () => { setCallStatus(CallStatus.ACTIVE); };
+        const onCallEnd = () => { setCallStatus(CallStatus.FINISHED); };
 
         const onMessage = (message: Message) => {
             if(message.type === 'transcript' && message.transcriptType === 'final') {
@@ -36,10 +37,10 @@ const Agent = ({ userName, userId, type }: AgentProps) => {
             }                
         }
 
-        const onSpeechStart = () => setIsSpeaking(true);
-        const onSpeechEnd = () => setIsSpeaking(false); 
+        const onSpeechStart = () => { setIsSpeaking(true); } 
+        const onSpeechEnd = () => { setIsSpeaking(false); };
 
-        const onError = (error: Error) => console.log('Error', error);
+        const onError = (error: Error) => { console.log('Error', error); };
 
         vapi.on('call-start', onCallStart);
         vapi.on('call-end', onCallEnd);
@@ -58,20 +59,56 @@ const Agent = ({ userName, userId, type }: AgentProps) => {
         }
     }, []);
 
-    useEffect(() => {
-      if(callStatus === CallStatus.FINISHED) router.push('/'); 
+    const handleGenerateFeedback = async (messages: SavedMessage[]) => {
+        console.log('Generate feedback here.');
 
+        //TODO: Create a server action that generates feedback
+
+        const { success, id } = {
+            success: true,
+            id: 'feedback-id'
+        }
+
+        if(success && id) {
+            router.push(`/interview/${interviewId}/feedback`);
+        } else {
+            console.log('Error saving feedback');
+            router.push('/');
+        }
+    }
+
+    useEffect(() => {
+      if(callStatus === CallStatus.FINISHED) {
+        if(type === 'generate') {
+            router.push('/')
+      } else {
+          handleGenerateFeedback(messages);
+      }
+      }
     }, [messages, callStatus, type, userId]);
 
     const handleCall = async () => {
         setCallStatus(CallStatus.CONNECTING);
-        await vapi.start(process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!, {
+
+        if(type === 'generate') {
+            await vapi.start(process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!, {
+                variableValues: {
+                    username: userName,
+                    userid: userId,
+                }
+            });
+        } else {
+            let formattedQuestions = '';
+
+            if(questions) {
+                formattedQuestions = questions.map((question) => `- ${question}`).join('\n');
+        }
+        await vapi.start(interviewer,{
             variableValues: {
-                username: userName,
-                userid: userId,
-            }
-        });
+                questions: formattedQuestions
+        }});
     }
+}
 
     const handleDisconnect = async () => {
         setCallStatus(CallStatus.FINISHED);
@@ -126,5 +163,6 @@ const Agent = ({ userName, userId, type }: AgentProps) => {
     </>
   )
 }
+
 
 export default Agent
